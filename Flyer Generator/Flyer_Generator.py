@@ -6,6 +6,65 @@ import qrcode
 from PIL import Image
 import io
 
+class Post:
+    def __init__(self, post):
+        """Initialize Post and fill variables from JSON"""
+        self.featured = False
+        self.recent = False
+        self.id = post.get('id')
+        self.title = post.get('title', {}).get('rendered', '')
+        self.exerpt = post.get('excerpt', {}).get('rendered', '')
+        self.date = post.get('date')
+        self.link = post.get('guid', {}).get('rendered', post.get('link', ''))
+
+        # Extract featured image from post
+        if '_embedded' in post and 'wp:featuredmedia' in post['_embedded']:
+            featured_media = post['_embedded']['wp:featuredmedia'][0]
+            self.featured_image = {
+                'url': featured_media.get('source_url'),
+                'alt': featured_media.get('alt_text', ''),
+                'caption': featured_media.get('caption', {}).get('rendered', '')
+            }
+
+        # Extract images from content using BeautifulSoup
+        soup = BeautifulSoup(postdata['content'], 'html.parser')
+        img_tags = soup.find_all('img')
+        self.images = [
+            {
+                'url': img.get('src', ''), 
+                'alt': img.get('alt', ''),
+                'title': img.get('title', ''),
+                'width': img.get('width', ''),
+                'height': img.get('height', '')
+            } 
+            for img in img_tags if img.get('src') # Filter broken <img> tags
+            ]
+
+        # Clean HTML from content for plain text (also using BeautifulSoup)
+        self.body = soup.get_text(separator=' ', strip=True)
+
+    def generate_qr_code(self, filename, size=10, border=4):
+        """Generate QR code for a given URL"""
+        qr = qrcode.QRCode(
+            version=1,  # Controls size (1 is smallest)
+            error_correction=qrcode.constants.ERROR_CORRECT_L,  # Low error correction
+            box_size=size,  # Size of each box in pixels
+            border=border,  # Border size in boxes
+        )
+        
+        qr.add_data(self.link)
+        qr.make(fit=True)
+        
+        # Create image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        img.save(filename)
+
+        return img
+
+    def get_CSV_entry():
+
+
 class WordPressExtractor:
     def __init__(self, base_url):
         """Initialize with WordPress site URL (e.g., 'https://example.com')"""
@@ -34,44 +93,7 @@ class WordPressExtractor:
         extracted_data = []
         
         for post in posts:
-            post_data = {
-                'id': post.get('id'),
-                'title': post.get('title', {}).get('rendered', ''),
-                'content': post.get('content', {}).get('rendered', ''),
-                'excerpt': post.get('excerpt', {}).get('rendered', ''),
-                'date': post.get('date'),
-                'link': post.get('guid', {}).get('rendered', post.get('link', '')),
-                'featured_image': None,
-                'images': []
-            }
-            
-            # Extract featured image
-            if '_embedded' in post and 'wp:featuredmedia' in post['_embedded']:
-                featured_media = post['_embedded']['wp:featuredmedia'][0]
-                post_data['featured_image'] = {
-                    'url': featured_media.get('source_url'),
-                    'alt': featured_media.get('alt_text', ''),
-                    'caption': featured_media.get('caption', {}).get('rendered', '')
-                }
-            
-            # Extract images from content using BeautifulSoup
-            soup = BeautifulSoup(post_data['content'], 'html.parser')
-            img_tags = soup.find_all('img')
-            post_data['images'] = [
-                {
-                    'url': img.get('src', ''), 
-                    'alt': img.get('alt', ''),
-                    'title': img.get('title', ''),
-                    'width': img.get('width', ''),
-                    'height': img.get('height', '')
-                } 
-                for img in img_tags if img.get('src')
-            ]
-            
-            # Clean HTML from content for plain text (also using BeautifulSoup)
-            post_data['plain_text'] = soup.get_text(separator=' ', strip=True)
-            
-            extracted_data.append(post_data)
+            extracted_data.append(Post(post))
         
         return extracted_data
     
@@ -99,28 +121,7 @@ class WordPressExtractor:
         
         return all_posts
     
-    def generate_qr_code(self, url, filename=None, size=10, border=4):
-        """Generate QR code for a given URL"""
-        qr = qrcode.QRCode(
-            version=1,  # Controls size (1 is smallest)
-            error_correction=qrcode.constants.ERROR_CORRECT_L,  # Low error correction
-            box_size=size,  # Size of each box in pixels
-            border=border,  # Border size in boxes
-        )
-        
-        qr.add_data(url)
-        qr.make(fit=True)
-        
-        # Create image
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        if filename:
-            img.save(filename)
-            print(f"QR code saved as: {filename}")
-        
-        return img
-    
-    def generate_site_qr_code(self, filename=None):
+    def generate_qr_code(self, filename=None):
         """Generate QR code for the main WordPress site"""
         if filename is None:
             # Create filename from site URL
@@ -130,60 +131,9 @@ class WordPressExtractor:
             filename = f"{site_name}_qr_code.png"
         
         return self.generate_qr_code(self.base_url, filename)
-    
-    def generate_post_qr_codes(self, extracted_posts, folder="qr_codes"):
-        """Generate QR codes for individual posts (expects extracted post data)"""
-        import os
-        
-        # Create folder if it doesn't exist
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-        
-        qr_codes = []
-        
-        for post in extracted_posts:
-            post_link = post.get('link', '')
-            post_id = post.get('id', 'unknown')
-            post_title = post.get('title', '')
-            
-            if post_link:
-                filename = os.path.join(folder, f"post_{post_id}_qr.png")
-                img = self.generate_qr_code(post_link, filename, size=8)
-                qr_codes.append({
-                    'post_id': post_id,
-                    'post_title': post_title,
-                    'qr_file': filename,
-                    'url': post_link
-                })
-        
-        return qr_codes
-    
-    def generate_raw_post_qr_codes(self, raw_posts, folder="qr_codes"):
-        """Generate QR codes for individual posts (expects raw API post data)"""
-        import os
-        
-        # Create folder if it doesn't exist
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-        
-        qr_codes = []
-        
-        for post in raw_posts:
-            post_link = post.get('guid', {}).get('rendered', post.get('link', ''))
-            post_id = post.get('id', 'unknown')
-            post_title = post.get('title', {}).get('rendered', '')
-            
-            if post_link:
-                filename = os.path.join(folder, f"post_{post_id}_qr.png")
-                img = self.generate_qr_code(post_link, filename, size=8)
-                qr_codes.append({
-                    'post_id': post_id,
-                    'post_title': post_title,
-                    'qr_file': filename,
-                    'url': post_link
-                })
-        
-        return qr_codes
+
+def createCSV():
+
 
 # Usage example
 if __name__ == "__main__":
