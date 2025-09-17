@@ -6,6 +6,7 @@ import base64
 from Flyer_Generator import WordPressExtractor, Post
 import tempfile
 import os
+import re
 
 #global variables
 editor = "John Doe"
@@ -52,6 +53,13 @@ def display_image_selector(post, post_index):
         list(available_images.keys()),
         key=f"img_select_{post_index}"
     )
+    
+     #Update the post with the new image
+    img_index = re.search(r'\d+$', selected_image_key)
+    if img_index:
+        post.custom_feature = int(img_index.group()) - 1
+        print("Set custom image: " + str(post.custom_feature))
+    
     
     selected_image = available_images[selected_image_key]
     
@@ -147,7 +155,7 @@ def display_post_card(post, index, total_posts, is_expanded=False):
             with col_btn1:
                 if st.button(f"Download Images", key=f"download_{index}"):
                     with st.spinner("Downloading images..."):
-                        post.download_images()
+                        post.download_images(True)
                         st.success("Images downloaded!")
                         st.rerun()
             
@@ -285,7 +293,7 @@ def download_all_images():
     
     for i, post in enumerate(st.session_state.posts):
         status_text.text(f"Downloading images for post {i+1}/{len(st.session_state.posts)}: {post.title[:30]}...")
-        post.download_images()
+        post.download_images(True)
         progress_bar.progress((i + 1) / len(st.session_state.posts))
     
     status_text.text("All images downloaded!")
@@ -302,7 +310,7 @@ def save_all_images():
     for i, post in enumerate(st.session_state.posts):
         status_text.text(f"Saving images for post {i+1}/{len(st.session_state.posts)}: {post.title[:30]}...")
         if not hasattr(post, 'downloaded_images'):
-            post.download_images()
+            post.download_images(True)
         post.save_images("Images/", allimages=True)
         progress_bar.progress((i + 1) / len(st.session_state.posts))
     
