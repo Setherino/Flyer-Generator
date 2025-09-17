@@ -82,39 +82,215 @@ def clean_text(text):
     return text
 
 class ZipBuilder:
+    """
+    A convenient class for building zip files in memory.
+    Handles the ZipFile object lifecycle automatically.
+    """
+    
     def __init__(self):
+        """Initialize a new ZipBuilder with an empty zip in memory."""
         self.buffer = io.BytesIO()
-        self.zipf = zipfile.ZipFile(self.buffer, 'w')
+        self.zipf = zipfile.ZipFile(self.buffer, 'w', zipfile.ZIP_DEFLATED)
         self.closed = False
     
-    def add_image(self, image, location, filename=None):
+    def _ensure_open(self):
+        """Ensure the zip file is still open for writing."""
         if self.closed:
-            raise ValueError("ZipBuilder is already closed")
-        
-        # Your zip_image logic here
-        if filename is None:
-            format_name = getattr(image, 'format', 'PNG') or 'PNG'
-            ext = 'jpg' if format_name == 'JPEG' else format_name.lower()
-            filename = f"image_{len(self.zipf.namelist()) + 1}.{ext}"
-        
+            raise ValueError("ZipBuilder is already closed. Cannot add more content.")
+    
+    def _normalize_path(self, location, filename):
+        """Create a normalized path within the zip file."""
         if location and not location.endswith('/'):
             location += '/'
-        
-        zip_path = f"{location}{filename}" if location else filename
-        
-        img_bytes = io.BytesIO()
-        image.save(img_bytes, format=getattr(image, 'format', None) or 'PNG')
-        self.zipf.writestr(zip_path, img_bytes.getvalue())
-        return self  # Allow chaining!
+        return f"{location}{filename}" if location else filename
     
-    def add_text(self, content, filename):
-        if self.closed:
-            raise ValueError("ZipBuilder is already closed")
-        self.zipf.writestr(filename, content.encode('utf-8'))
+    def add_image(self, image, location='', filename=None, image_format=None):
+        """
+        Add a PIL Image to the zip file.
+        
+        Args:
+            image: PIL Image object
+            location: Directory path within zip (e.g., 'photos/', 'images/2024/')
+            filename: Optional filename. If None, generates automatically
+            image_format: Optional format override. If None, uses image's format or PNG
+        
+        Returns:
+            self: For method chaining
+        """
+        self._ensure_open()
+        
+        # Determine image format
+        if image_format is None:
+            image_format = getattr(image, 'format', None) or 'PNG'
+        
+        # Generate filename if not provided
+        if filename is None:
+            extension = image_format.lower()
+            if extension == 'jpeg':
+                extension = 'jpg'
+            filename = f"image_{len(self.zipf.namelist()) + 1}.{extension}"
+        
+        # Create full path in zip
+        zip_path = self._normalize_path(location, filename)
+        
+        # Convert image to bytes
+        img_bytes = io.BytesIO()
+        image.save(img_bytes, format=image_format)
+        
+        # Add to zip
+        self.zipf.writestr(zip_path, img_bytes.getvalue())
+        
         return self
     
+    def add_text(self, content, filename, location='', encoding='utf-8'):
+        """
+        Add text content to the zip file.
+        
+        Args:
+            content: String content to add
+            filename: Name of the file in the zip
+            location: Directory path within zip
+            encoding: Text encoding (default: utf-8)
+        
+        Returns:
+            self: For method chaining
+        """
+        self._ensure_open()
+        
+        zip_path = self._normalize_path(location, filename)
+        self.zipf.writestr(zip_path, content.encode(encoding))
+        
+        return self
+    
+    def add_csv(self, rows, filename, location='', encoding='utf-8'):
+        """
+        Add CSV data to the zip file.
+        
+        Args:
+            rows: List of lists/tuples representing CSV rows
+            filename: Name of the CSV file in the zip
+            location: Directory path within zip
+            encoding: Text encoding (default: utf-8)
+        
+        Returns:
+            self: For method chaining
+        """
+        self._ensure_open()
+        
+        # Create CSV content
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+        writer.writerows(rows)
+        
+        # Add to zip
+        zip_path = self._normalize_path(location, filename)
+        self.zipf.writestr(zip_path, csv_buffer.getvalue().encode(encoding))
+        
+        return self
+    
+    def add_bytes(self, data, filename, location=''):
+        """
+        Add raw bytes to the zip file.
+        
+        Args:
+            data: Bytes to add
+            filename: Name of the file in the zip
+            location: Directory path within zip
+        
+        Returns:
+            self: For method chaining
+        """
+        self._ensure_open()
+        
+        zip_path = self._normalize_path(location, filename)
+        self.zipf.writestr(zip_path, data)
+        
+        return self
+    
+    def add_file(self, file_path, zip_filename=None, location=''):
+        """
+        Add a file from disk to the zip.
+        
+        Args:
+            file_path: Path to the file on disk
+            zip_filename: Name in the zip (if None, uses original filename)
+            location: Directory path within zip
+        
+        Returns:
+            self: For method chaining
+        """
+        self._ensure_open()
+        
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        if zip_filename is None:
+            zip_filename = file_path.name
+        
+        zip_path = self._normalize_path(location, zip_filename)
+        self.zipf.write(str(file_path), zip_path)
+        
+        return self
+    
+    def list_contents(self):
+        """
+        Get a list of all files currently in the zip.
+        
+        Returns:
+            list: List of filenames in the zip
+        """
+        return self.zipf.namelist()
+    
+    def get_info(self):
+        """
+        Get information about the current zip contents.
+        
+        Returns:
+            dict: Information about the zip file
+        """
+        files = self.zipf.namelist()
+        return {
+            'file_count': len(files),
+            'files': files,
+            'is_closed': self.closed,
+            'approximate_size_bytes': len(self.buffer.getvalue())
+        }
+    
     def getvalue(self):
+        """
+        Get the complete zip file as bytes. This closes the zip file.
+        
+        Returns:
+            bytes: Complete zip file data
+        """
         if not self.closed:
             self.zipf.close()
             self.closed = True
+        
         return self.buffer.getvalue()
+    
+    def save_to_file(self, filepath):
+        """
+        Save the zip to a file on disk.
+        
+        Args:
+            filepath: Path where to save the zip file
+        """
+        zip_bytes = self.getvalue()
+        with open(filepath, 'wb') as f:
+            f.write(zip_bytes)
+    
+    def __len__(self):
+        """Return the number of files in the zip."""
+        return len(self.zipf.namelist())
+    
+    def __enter__(self):
+        """Support for context manager (with statement)."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Automatically close when exiting context manager."""
+        if not self.closed:
+            self.zipf.close()
+            self.closed = True
