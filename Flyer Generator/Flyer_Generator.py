@@ -11,8 +11,8 @@ import io
 import os
 from pathlib import Path
 
-DEFAULT_IMG_SAVE_LOC = "C:/Users/seths/OneDrive/Desktop/Images/"
-DEFAULT_CSV_SAVE_LOC = "C:/Users/seths/OneDrive/Desktop/CSV_FILES/"
+DEFAULT_IMG_SAVE_LOC = "Images/"
+DEFAULT_CSV_SAVE_LOC = "CSV_FILES/"
 class Post:
     def __init__(self, post):
         """Initialize Post and fill variables from JSON"""
@@ -25,7 +25,12 @@ class Post:
         self.exerpt = post.get('excerpt', {}).get('rendered', '')
         self.date = post.get('date')
         self.link = post.get('guid', {}).get('rendered', post.get('link', ''))
+        self.author = post.get('author_meta',{}).get('display_name','')
         
+        # Clean up the title:
+        titleSoup = BeautifulSoup(self.title, features = "html.parser")
+        self.title = titleSoup.get_text(separator=' ', strip=True)
+
         featured_media = Methods.get_featured_media(post)
         if featured_media:
             self.featured_image = {
@@ -94,7 +99,6 @@ class Post:
 
         #Saving featured image
         if hasattr(self, "featured_image"):
-            print("Has attribute featured image!")
             filepaths['featured'] = Methods.save_image(self.downloaded_images['featured'], Path(location) / (str(self.id) + "_featured.jpg"))
 
         #Save QR code
@@ -112,7 +116,7 @@ class Post:
         self.image_paths = filepaths
         return self.image_paths
 
-    def get_CSV_entry(self):
+    def get_CSV_entry(self, index = 0):
         """Returns one CSV entry containing headline, article body, and filepaths to the QR code & featured image"""
         if not hasattr(self, "image_paths"):
             if hasattr(self, "custom_feature"):
@@ -121,15 +125,16 @@ class Post:
                 self.save_images(DEFAULT_IMG_SAVE_LOC, True)
             
             CSV = {
-                "Title" : self.title,
-                "Body" : self.body,
-                "QR": self.image_paths['qr_code'],
+                "Title_" + chr(index + 65) : self.title,
+                "Body_" + chr(index + 65) : self.body,
+                "@QR_" + chr(index + 65) : self.image_paths['qr_code'],
+                "Author_" + chr(index + 65) : self.author
                 }
             
             if (hasattr(self, "custom_feature")):
-                CSV["image"] = self.image_paths["img_" + tostring(self.custom_feature)]
+                CSV["@image_" + chr(index + 65)] = self.image_paths["img_" + tostring(self.custom_feature)]
             else:
-                CSV["image"] = self.image_paths["featured"]
+                CSV["@image_" + chr(index + 65)] = self.image_paths["featured"]
             
             return CSV
 
