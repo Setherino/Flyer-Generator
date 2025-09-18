@@ -152,33 +152,33 @@ def display_post_card(post, index, total_posts, is_expanded=False):
                     st.rerun()
 
 def update_extra_data():
-    if 'ed_editor' in st.session_state:
-        edited_data = st.session_state.ed_editor
-        valid_rows = edited_data[edited_data['Key'].notna() & (edited_data['Key'] != '')]
-        st.session_state.extra_data = dict(zip(valid_rows['Key'], valid_rows['Value']))
+    edited_df = st.session_state["editor_df"]
+    st.session_state["extra_data"] = dict(zip(edited_df["Key"], edited_df["Value"]))
+    st.session_state["editor_df"] = edited_df
 
 def display_ed_table():
     st.text("Fill or add information not included in posts:")
-    if 'extra_data' not in st.session_state:
-        st.session_state.extra_data = {
-            'editor': 'John Smith',
-            'copy_editor': 'Jane Doe',
-            'advisor': 'Steve Doe',
-            'date_printed': '01/01/1970'
-        }
 
-    # Convert dictionary to DataFrame for editing
-    df = pd.DataFrame(list(st.session_state.extra_data.items()), 
-                      columns=['Key', 'Value'])
-
-    # Create editable data editor
+    if "editor_df" not in st.session_state:
+        st.session_state["editor_df"] = pd.DataFrame(
+            [("editor", "John Smith"),
+             ("copy-editor", "Jane Doe"),
+             ("advisor", "Steve Doe"),
+             ("date_printed", "01/01/1970")],
+            columns=["Key", "Value"],
+        )
+        
     edited_df = st.data_editor(
-        df,
-        num_rows="dynamic",  # Allow adding/removing rows
-        width='stretch',
-        key="ed_editor"
+        st.session_state["editor_df"],
+        key="ed_editor_widget",
+        num_rows="dynamic",
+        width="stretch",
+        on_change=update_extra_data,
     )
-    st.session_state.extra_data = dict(zip(edited_df['Key'], edited_df['Value']))
+    st.session_state["editor_df"] = edited_df
+    # Ensure extra_data is initialized at least once
+    if "extra_data" not in st.session_state:
+        st.session_state["extra_data"] = dict(zip(st.session_state["editor_df"]["Key"], st.session_state["editor_df"]["Value"]))
 
 def main():
     headcol1, headcol2 = st.columns([1,10], vertical_alignment = "center")
@@ -310,9 +310,12 @@ def generate_all_csv():
         progress_bar.progress((i + 1) / len(st.session_state.posts))
     
         # Add extra data
-    for key, value in st.session_state.extra_data.items():
-        header.append(key)
-        row.append(value)
+    
+    editor_df = st.session_state.get("editor_df")
+    if editor_df is not None:
+        for key, value in zip(editor_df["Key"], editor_df["Value"]):
+            header.append(key)
+            row.append(value)
 
     # Create DataFrame and display
     df = pd.DataFrame([row],columns=header)
@@ -322,7 +325,7 @@ def generate_all_csv():
     
     # Display the data
     st.subheader("Generated CSV Data")
-    st.dataframe(df, width="true")
+    st.dataframe(df, width="stretch")
     
     # Download button for CSV
     zip_buffer.add_csv([header,row],"flyer_autofill.csv")
