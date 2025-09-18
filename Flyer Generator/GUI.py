@@ -282,14 +282,14 @@ def generate_all_csv():
         # Add extra dat
 
     # Create DataFrame and display
-    df = pd.DataFrame([row],columns=header)
+    #df = pd.DataFrame([row],columns=header)
     
     status_text.text("All CSV entries generated!")
     st.success("All CSV entries have been generated!")
     
     # Display the data
     st.subheader("Generated CSV Data")
-    st.dataframe(df, width="stretch")
+    #st.dataframe(df, width="stretch")
     
     # Download button for CSV
     zip_buffer.add_csv([header,row],"flyer_autofill.csv")
