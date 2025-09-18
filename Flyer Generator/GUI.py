@@ -6,16 +6,12 @@ import base64
 from Flyer_Generator import WordPressExtractor, Post
 import tempfile
 import os
-
-#global variables
-editor = "John Doe"
-copy_editor = "Jane Doe"
-advisor = "Joe Doe"
-date_printed = "01/01/1980"
+import re
+import Methods
 
 # Set page config
 st.set_page_config(
-    page_title="Student Newspaper Flyer Generator",
+    page_title="Front Page Flyer Generator",
     page_icon=":newspaper:",
     layout="wide"
 )
@@ -52,6 +48,13 @@ def display_image_selector(post, post_index):
         list(available_images.keys()),
         key=f"img_select_{post_index}"
     )
+    
+     #Update the post with the new image
+    img_index = re.search(r'\d+$', selected_image_key)
+    if img_index:
+        post.custom_feature = int(img_index.group()) - 1
+        print("Set custom image: " + str(post.custom_feature))
+    
     
     selected_image = available_images[selected_image_key]
     
@@ -142,59 +145,48 @@ def display_post_card(post, index, total_posts, is_expanded=False):
                 st.write(f"**Link:** [View Article]({post.link})")
             
             # Action buttons
-            col_btn1, col_btn2, col_btn3 = st.columns(3)
-            
-            with col_btn1:
-                if st.button(f"Download Images", key=f"download_{index}"):
-                    with st.spinner("Downloading images..."):
-                        post.download_images()
-                        st.success("Images downloaded!")
-                        st.rerun()
-            
-            with col_btn2:
-                if st.button(f"Save Images", key=f"save_{index}"):
-                    with st.spinner("Saving images..."):
-                        post.save_images("Images/", allimages=True)
-                        st.success("Images saved!")
-                        st.rerun()
-            
-            with col_btn3:
-                if st.button(f"Generate CSV Entry", key=f"csv_{index}"):
-                    csv_entry = post.get_CSV_entry(index)
-                    st.json(csv_entry)
+            if st.button(f"Download Images", key=f"download_{index}"):
+                with st.spinner("Downloading images..."):
+                    post.download_images(True)
+                    st.success("Images downloaded!")
+                    st.rerun()
 
+def update_extra_data():
+    edited_df = st.session_state["editor_df"]
+    st.session_state["extra_data"] = dict(zip(edited_df["Key"], edited_df["Value"]))
+    st.session_state["editor_df"] = edited_df
 
-def handle_text_change():
-    pass
+def display_ed_table():
+    st.text("Fill or add information not included in posts:")
+
+    if "editor_df" not in st.session_state:
+        st.session_state["editor_df"] = pd.DataFrame(
+            [("editor", "John Smith"),
+             ("copy-editor", "Jane Doe"),
+             ("advisor", "Steve Doe"),
+             ("date_printed", "01/01/1970")],
+            columns=["Key", "Value"],
+        )
+        
+    edited_df = st.data_editor(
+        st.session_state["editor_df"],
+        key="ed_editor_widget",
+        num_rows="dynamic",
+        width="stretch",
+        on_change=update_extra_data,
+    )
+    st.session_state["editor_df"] = edited_df
+    # Ensure extra_data is initialized at least once
+    if "extra_data" not in st.session_state:
+        st.session_state["extra_data"] = dict(zip(st.session_state["editor_df"]["Key"], st.session_state["editor_df"]["Value"]))
 
 def main():
-    st.title("Student Newspaper Flyer Generator")
-    st.markdown("---")
+    headcol1, headcol2 = st.columns([1,10], vertical_alignment = "center")
+    headcol1.image("logo.png")
+    headcol2.title("The Front Page Stand-Flyer Generator")
+    headcol2.text("Created by Seth Ciancio")
+    st.divider()
     
-    editor = st.text_input(
-    "Editor-in-Chief:",
-    value="John Doe",
-    on_change=handle_text_change,
-    key="editor_textbox"
-    )
-    copy_editor = st.text_input(
-    "Copy Editor:",
-    value="Jane Doe",
-    on_change=handle_text_change,
-    key="copy_editor_textbox"
-    )
-    advisor = st.text_input(
-    "Advisor:",
-    value="Joe Doe",
-    on_change=handle_text_change,
-    key="advisor_textbox"
-    )
-    date_printed = st.text_input(
-    "Date Printed:",
-    value="01/01/1980",
-    on_change=handle_text_change,
-    key="date_printed_textbox"
-    )
     
 
     # Sidebar for WordPress site configuration
@@ -225,7 +217,8 @@ def main():
     if 'posts' not in st.session_state:
         st.info("Please fetch posts from your WordPress site using the sidebar.")
         return
-    
+    display_ed_table()
+
     if not st.session_state.posts:
         st.warning("No posts found. Please check your WordPress site URL and try again.")
         return
@@ -234,18 +227,14 @@ def main():
     st.header(f"Manage Posts ({len(st.session_state.posts)} posts loaded)")
     
     # Bulk actions
-    col1, col2, col3 = st.columns(3)
+    col1, col3 = st.columns(2)
     
     with col1:
-        if st.button("Download All Images"):
+        if st.button("Fetch All Images"):
             download_all_images()
     
-    with col2:
-        if st.button("Save All Images"):
-            save_all_images()
-    
     with col3:
-        if st.button("Generate All CSV Entries"):
+        if st.button("Generate Zip File"):
             generate_all_csv()
     
     st.markdown("---")
@@ -285,36 +274,18 @@ def download_all_images():
     
     for i, post in enumerate(st.session_state.posts):
         status_text.text(f"Downloading images for post {i+1}/{len(st.session_state.posts)}: {post.title[:30]}...")
-        post.download_images()
+        post.download_images(True)
         progress_bar.progress((i + 1) / len(st.session_state.posts))
     
     status_text.text("All images downloaded!")
     st.success("All images have been downloaded!")
 
-def save_all_images():
-    """Save images for all posts"""
-    if 'posts' not in st.session_state:
-        return
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for i, post in enumerate(st.session_state.posts):
-        status_text.text(f"Saving images for post {i+1}/{len(st.session_state.posts)}: {post.title[:30]}...")
-        if not hasattr(post, 'downloaded_images'):
-            post.download_images()
-        post.save_images("Images/", allimages=True)
-        progress_bar.progress((i + 1) / len(st.session_state.posts))
-    
-    status_text.text("All images saved!")
-    st.success("All images have been saved!")
-
 def generate_all_csv():
-    """Generate CSV entries for all posts"""
+    """Generate CSV entries for all posts, put everything into zip file."""
     if 'posts' not in st.session_state:
         return
     
-    
+    zip_buffer = Methods.ZipBuilder()
     
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -324,7 +295,8 @@ def generate_all_csv():
 
     for i, post in enumerate(st.session_state.posts):
         status_text.text(f"Generating CSV entry for post {i+1}/{len(st.session_state.posts)}: {post.title[:30]}...")
-        csv_entry = post.get_CSV_entry(i)
+        zip_buffer = post.zip_images(zip_buffer)
+        csv_entry = post.get_CSV_entry_zip(i)
         # Would make more sense for each post to be its own row with the same header, but inDesign Data Merge is kind of annoying.
         # It basically only ever wants to merge one row of a CSV, there are ways around this in ID but it's inflexible, so we just put everything in one row
         if csv_entry:
@@ -334,16 +306,16 @@ def generate_all_csv():
         else:
             print("Error: No Posts!")
             return
+
         progress_bar.progress((i + 1) / len(st.session_state.posts))
     
-    header.append('editor')
-    row.append(editor)
-    header.append('copy_editor')
-    row.append(copy_editor)
-    header.append('advisor')
-    row.append(advisor)
-    header.append('date_printed')
-    row.append(date_printed)
+        # Add extra data
+    
+    editor_df = st.session_state.get("editor_df")
+    if editor_df is not None:
+        for key, value in zip(editor_df["Key"], editor_df["Value"]):
+            header.append(key)
+            row.append(value)
 
     # Create DataFrame and display
     df = pd.DataFrame([row],columns=header)
@@ -353,15 +325,15 @@ def generate_all_csv():
     
     # Display the data
     st.subheader("Generated CSV Data")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, width="stretch")
     
     # Download button for CSV
-    csv_string = df.to_csv(index=False)
+    zip_buffer.add_csv([header,row],"flyer_autofill.csv")
     st.download_button(
-        label="Download CSV",
-        data=csv_string,
-        file_name="flyer_posts.csv",
-        mime="text/csv"
+        label="Download images & CSV",
+        data=zip_buffer.getvalue(),
+        file_name="flyer_info.zip",
+        mime="application/zip"
     )
 
 def move_post_up(index):

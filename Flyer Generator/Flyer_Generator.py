@@ -9,10 +9,18 @@ import qrcode
 from PIL import Image
 import io
 import os
+import re
+import zipfile
+import csv
 from pathlib import Path
 
-DEFAULT_IMG_SAVE_LOC = "Images/"
+DEFAULT_IMG_SAVE_LOC = "images/"
 DEFAULT_CSV_SAVE_LOC = "CSV_FILES/"
+### Adobe docs specify that DataMerge should work with paths relative to the CSV, but it does not, so leave this field empty.
+DEFAULT_IMG_SAVE_ZIP = "" 
+DEFAULT_CSV_SAVE_ZIP = "CSV_FILES/"
+
+
 class Post:
     def __init__(self, post):
         """Initialize Post and fill variables from JSON"""
@@ -27,9 +35,8 @@ class Post:
         self.link = post.get('guid', {}).get('rendered', post.get('link', ''))
         self.author = post.get('author_meta',{}).get('display_name','')
         
-        # Clean up the title:
-        titleSoup = BeautifulSoup(self.title, features = "html.parser")
-        self.title = titleSoup.get_text(separator=' ', strip=True)
+        # Clean up the title, should not be any HTML but just to be sure:
+        self.title =Methods.clean_text(self.title)
 
         featured_media = Methods.get_featured_media(post)
         if featured_media:
@@ -56,6 +63,8 @@ class Post:
         # Clean HTML from content for plain text (also using BeautifulSoup)
         self.body = soup.get_text(separator=' ', strip=True)
 
+        self.body = Methods.clean_text(self.body)
+
     def generate_qr_code(self, size=10, border=4):
         """Generate QR code from the post URL"""
         qr = qrcode.QRCode(
@@ -73,70 +82,97 @@ class Post:
 
         return self.qr_code
     
-    def download_images(self):
+    def download_images(self, allimages = False):
         "Downloads all images in a post, puts images into downloaded_images"
         self.downloaded_images = { }
 
         #Get featured image
         if hasattr(self, "featured_image"):
             print("Found featured image!")
-            self.downloaded_images['featured'] = Methods.download_image(self.featured_image['url'])
+            self.downloaded_images[self.featured_key()] = Methods.download_image(self.featured_image['url'])
             
-        #Download other images in article.
-        print("Downloading other images...")
-        for index, image in enumerate(self.images):
-            self.downloaded_images['img_' + str(index)] = Methods.download_image(image['url'])
-            print("Image downloaded!")
+        #Download other images in article, if it's asked or if a custom_feature is set.
+        if allimages or (hasattr(self, "custom_feature") and self.custom_feature):
+            print("Downloading other images...")
+            for index, image in enumerate(self.images):
+                self.downloaded_images[self.img_key(index)] = Methods.download_image(image['url'])
+                print("Image downloaded!")
 
         return self.downloaded_images
 
-    def save_images(self, location, allimages = False):
-        """Saves QR codes & featured image + all article images if allimages = True"""
-        filepaths = { }
+    def featured_key(self):
+        """Returns standard key for featured image"""
+        return 'featured'
 
+    def img_key(self, index):
+        """Returns standard key for article images"""
+        return 'img_' + str(index)
+
+    def qr_key(self):
+        """Returns standard key for qr code"""
+        return 'qr_code'
+
+
+    def get_featured_filename(self):
+        """Returns standard filename for featured image"""
+        return str(self.id) + "_featured.png"
+
+    def get_img_filename(self, index):
+        """Returns standard filename for article images"""
+        return str(self.id) + "_img_" + str(index) + ".png"
+
+    def get_qr_filename(self):
+        """Returns standard filename for qr code"""
+        return str(self.id) + "_qr_code.png"
+
+    def zip_images(self, zip_buffer : Methods.ZipBuilder, allimages = False):
+        """Add all post images into a Zip file, generate/downloads images where necessary"""
         if not hasattr(self, "downloaded_images"):
             self.download_images()
 
-        #Saving featured image
-        if hasattr(self, "featured_image"):
-            filepaths['featured'] = Methods.save_image(self.downloaded_images['featured'], Path(location) / (str(self.id) + "_featured.jpg"))
+        zip_paths = { }
 
-        #Save QR code
-        if (not hasattr(self,"qr_code")):
+        if hasattr(self, "featured_image") and self.featured_image:
+            zip_buffer.add_image(self.downloaded_images[self.featured_key()], DEFAULT_IMG_SAVE_ZIP, self.get_featured_filename())
+            zip_paths[self.featured_key()] = DEFAULT_IMG_SAVE_ZIP + self.get_featured_filename()
+        
+        if not hasattr(self,"qr_code"):
             self.generate_qr_code()
-        filepaths['qr_code'] = Methods.save_image(self.qr_code, Path(location) / (str(self.id) + "_qr_code.png"))
+        
+        zip_buffer.add_image(self.qr_code, DEFAULT_IMG_SAVE_ZIP, self.get_qr_filename())
+        zip_paths[self.qr_key()] = DEFAULT_IMG_SAVE_ZIP + self.get_qr_filename()
 
-        if (allimages):
-            print("Saving all images!")
-            for index, image in enumerate(self.images):
-                print("Saving image.")
-                saveloc = Path(location) / (str(self.id) + "_img_" + str(index) + ".png")
-                filepaths['img_' + str(index)] = Methods.save_image(self.downloaded_images['img_' + str(index)], saveloc)
+        article_images = {k: v for k, v in self.downloaded_images.items() if k != self.featured_key()}
+        if hasattr(self, 'custom_feature') and self.custom_feature:
+            for index, image in enumerate(article_images):
+                zip_buffer.add_image(self.downloaded_images[self.img_key(index)], DEFAULT_IMG_SAVE_ZIP, self.get_img_filename(index))
+                zip_paths[self.img_key(index)] = DEFAULT_IMG_SAVE_ZIP + self.get_img_filename(index)
+        
+        self.image_paths = zip_paths
+        return zip_buffer
 
-        self.image_paths = filepaths
-        return self.image_paths
-
-    def get_CSV_entry(self, index = 0):
-        """Returns one CSV entry containing headline, article body, and filepaths to the QR code & featured image"""
-        if not hasattr(self, "image_paths"):
-            if hasattr(self, "custom_feature"):
-                self.save_images(DEFAULT_IMG_SAVE_LOC, True)
-            else:
-                self.save_images(DEFAULT_IMG_SAVE_LOC, True)
-            
-            CSV = {
+    def get_CSV_helper(self, image_paths, index = 0):
+        """Returns one CSV entry containing headline, article body, and absolute filepaths to the QR code & featured image. Will save images/QR code"""
+        CSV = {
                 "Title_" + chr(index + 65) : self.title,
                 "Body_" + chr(index + 65) : self.body,
-                "@QR_" + chr(index + 65) : self.image_paths['qr_code'],
+                "@QR_" + chr(index + 65) : image_paths[self.qr_key()],
                 "Author_" + chr(index + 65) : self.author
                 }
             
-            if (hasattr(self, "custom_feature")):
-                CSV["@image_" + chr(index + 65)] = self.image_paths["img_" + tostring(self.custom_feature)]
-            else:
-                CSV["@image_" + chr(index + 65)] = self.image_paths["featured"]
+        if hasattr(self, "custom_feature") and self.custom_feature:
+            CSV["@image_" + chr(index + 65)] = image_paths[self.img_key(self.custom_feature)]
+        else:
+            CSV["@image_" + chr(index + 65)] = image_paths[self.featured_key()]
+        
+        return CSV
+
+    def get_CSV_entry_zip(self, index = 0):
+        """Returns one CSV entry containing post info."""
+        
+        return self.get_CSV_helper(self.image_paths, index)
             
-            return CSV
+            
 
 
 class WordPressExtractor:
@@ -144,7 +180,7 @@ class WordPressExtractor:
         """Initialize with WordPress site URL (e.g., 'https://example.com')"""
         self.base_url = base_url.rstrip('/')
         self.api_url = urljoin(self.base_url, '/wp-json/wp/v2/')
-    
+
     def get_posts(self, per_page=10, page=1):
         """Fetch posts from WordPress REST API"""
         url = urljoin(self.api_url, 'posts?_embed=1')
@@ -157,19 +193,25 @@ class WordPressExtractor:
         
         try:
             response = requests.get(url, params=params)
+            response.encoding = 'utf-8'
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
             print(f"Error fetching posts: {e}")
-            return []
-    
+            return []   
+
+        for i, post in enumerate(posts):
+            
+            pass
+
     def extract_posts(self, posts):
         """Extract title, content, and images from posts"""
         extracted_posts = []
         
         for post in posts:
             extracted_posts.append(Post(post))
-        
+
+        self.posts = extracted_posts
         return extracted_posts
     
     def get_all_posts(self, max_posts=None):
@@ -206,6 +248,62 @@ class WordPressExtractor:
             filename = f"{site_name}_qr_code.png"
         
         return self.generate_qr_code(self.base_url, filename)
+
+
+
+
+
+
+
+# Example usage and demonstration
+if __name__ == "__main__":
+    # Create some sample images
+    red_img = Image.new('RGB', (100, 100), 'red')
+    blue_img = Image.new('RGB', (150, 150), 'blue')
+    green_img = Image.new('RGB', (200, 200), 'green')
+    
+    # Example 1: Method chaining
+    builder = ZipBuilder()
+    zip_bytes = (builder
+                .add_image(red_img, 'photos/', 'sunset.jpg', 'JPEG')
+                .add_image(blue_img, 'thumbnails/')  # Auto-generated filename
+                .add_text('This is a sample zip file!', 'readme.txt')
+                .add_csv([['Name', 'Age'], ['Alice', 25], ['Bob', 30]], 'data.csv', 'reports/')
+                .getvalue())
+    
+    print(f"Created zip with {len(zip_bytes)} bytes")
+    
+    # Example 2: Step by step
+    builder2 = ZipBuilder()
+    builder2.add_image(green_img, 'assets/images/', 'logo.png')
+    builder2.add_text('Config settings here', 'config.txt', 'settings/')
+    
+    print(f"Files in zip: {builder2.list_contents()}")
+    print(f"Zip info: {builder2.get_info()}")
+    
+    # Save to file
+    builder2.save_to_file('example_output.zip')
+    
+    # Example 3: Context manager (automatic cleanup)
+    with ZipBuilder() as zip_ctx:
+        zip_ctx.add_image(red_img, 'photos/', 'red.png')
+        zip_ctx.add_image(blue_img, 'photos/', 'blue.png')
+        zip_ctx.add_text('Generated automatically', 'auto.txt')
+        
+        context_zip = zip_ctx.getvalue()
+    
+    print(f"Context manager zip: {len(context_zip)} bytes")
+    
+    # Example 4: Adding different types of content
+    mixed_builder = ZipBuilder()
+    mixed_builder.add_image(red_img, 'images/')
+    mixed_builder.add_bytes(b'Raw binary data', 'data.bin', 'binary/')
+    
+    # You can check contents before finalizing
+    print(f"Mixed zip contains: {mixed_builder.list_contents()}")
+    
+    final_mixed = mixed_builder.getvalue()
+    print(f"Final mixed zip: {len(final_mixed)} bytes")
 
 # Usage example
 if __name__ == "__main__":
