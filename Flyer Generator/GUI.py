@@ -46,13 +46,13 @@ def display_image_selector(post, post_index):
     selected_image_key = st.selectbox(
         "Select Image:",
         list(available_images.keys()),
-        key=f"img_select_{post_index}"
+        key=f"img_select_{int(post_index)}"
     )
     
      #Update the post with the new image
     img_index = re.search(r'\d+$', selected_image_key)
-    if img_index:
-        post.custom_feature = int(img_index.group()) - 1
+    if int(img_index):
+        post.custom_feature = int(img_index).group()) - 1
         print("Set custom image: " + str(post.custom_feature))
     
     
@@ -88,24 +88,24 @@ def display_post_card(post, index, total_posts, is_expanded=False):
     
     with col_buttons:
         st.write("")  # Add some spacing
-        if index > 0:  # Not the first post
-            if st.button("↑", key=f"move_up_{index}", help="Move up"):
-                move_post_up(index)
+        if int(index) > 0:  # Not the first post
+            if st.button("↑", key=f"move_up_{int(index)}", help="Move up"):
+                move_post_up(int(index))
         
-        if index < total_posts - 1:  # Not the last post
-            if st.button("↓", key=f"move_down_{index}", help="Move down"):
-                move_post_down(index)
+        if int(index) < total_posts - 1:  # Not the last post
+            if st.button("↓", key=f"move_down_{int(index)}", help="Move down"):
+                move_post_down(int(index))
     
     with col_content:
         # Create expandable container for each post
-        with st.expander(f"{index + 1}. {post.title[:50]}{'...' if len(post.title) > 50 else ''}", expanded=is_expanded):
+        with st.expander(f"{int(index) + 1}. {post.title[:50]}{'...' if len(post.title) > 50 else ''}", expanded=is_expanded):
             # Create columns for layout
             col1, col2 = st.columns([1, 2])
             
             with col1:
                 st.subheader("Images")
                 # Image selector and display
-                selected_img_key, selected_img = display_image_selector(post, index)
+                selected_img_key, selected_img = display_image_selector(post, int(index))
                 
                 # QR Code section
                 st.subheader("QR Code")
@@ -116,7 +116,7 @@ def display_post_card(post, index, total_posts, is_expanded=False):
                     img_buffer.seek(0)
                     st.image(img_buffer, width=150, caption="Link to article")
                 else:
-                    if st.button(f"Generate QR Code", key=f"qr_{index}"):
+                    if st.button(f"Generate QR Code", key=f"qr_{int(index)}"):
                         with st.spinner("Generating QR code..."):
                             post.generate_qr_code()
                             st.rerun()
@@ -128,7 +128,7 @@ def display_post_card(post, index, total_posts, is_expanded=False):
                 title = st.text_input(
                     "Title:",
                     value=post.title,
-                    key=f"title_{index}"
+                    key=f"title_{int(index)}"
                 )
                 
                 # Article body (editable)
@@ -136,7 +136,7 @@ def display_post_card(post, index, total_posts, is_expanded=False):
                     "Body:",
                     value=post.body,
                     height=200,
-                    key=f"body_{index}"
+                    key=f"body_{int(index)}"
                 )
                 
                 # Post metadata
@@ -145,7 +145,7 @@ def display_post_card(post, index, total_posts, is_expanded=False):
                 st.write(f"**Link:** [View Article]({post.link})")
             
             # Action buttons
-            if st.button(f"Download Images", key=f"download_{index}"):
+            if st.button(f"Download Images", key=f"download_{int(index)}"):
                 with st.spinner("Downloading images..."):
                     post.download_images(True)
                     st.success("Images downloaded!")
@@ -279,7 +279,7 @@ def generate_all_csv():
 
         progress_bar.progress((i + 1) / len(st.session_state.posts))
     
-        
+        # Add extra dat
 
     # Create DataFrame and display
     df = pd.DataFrame([row],columns=header)
@@ -302,17 +302,17 @@ def generate_all_csv():
 
 def move_post_up(index):
     """Move a post up in the list"""
-    if index > 0 and 'posts' in st.session_state:
+    if int(index) > 0 and 'posts' in st.session_state:
         posts = st.session_state.posts
-        posts[index], posts[index - 1] = posts[index - 1], posts[index]
+        posts[int(index)], posts[int(index) - 1] = posts[int(index) - 1], posts[int(index)]
         st.session_state.posts = posts
         st.rerun()
 
 def move_post_down(index):
     """Move a post down in the list"""
-    if 'posts' in st.session_state and index < len(st.session_state.posts) - 1:
+    if 'posts' in st.session_state and int(index) < len(st.session_state.posts) - 1:
         posts = st.session_state.posts
-        posts[index], posts[index + 1] = posts[index + 1], posts[index]
+        posts[int(index)], posts[int(index) + 1] = posts[int(index) + 1], posts[int(index)]
         st.session_state.posts = posts
         st.rerun()
 
