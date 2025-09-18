@@ -1,10 +1,12 @@
 ﻿import requests
 from PIL import Image
 from io import BytesIO
+import io
 import os
 from bs4 import BeautifulSoup
 from pathlib import Path
 import zipfile
+import csv
 
 def download_image(url):
         """Saves an image from a URL to a local file"""
@@ -65,6 +67,7 @@ def get_featured_media(post):
             pass
 
 def clean_text(text):
+    """Removes certain bad unicode characters and removes HTML gunk"""
     # Remove any HTML gunk
     soup = BeautifulSoup(text, features = "html.parser")
     text = soup.get_text(separator=' ', strip=True)
@@ -93,10 +96,12 @@ class ZipBuilder:
         self.zipf = zipfile.ZipFile(self.buffer, 'w', zipfile.ZIP_DEFLATED)
         self.closed = False
     
-    def _ensure_open(self):
+    def verify_zip(self):
         """Ensure the zip file is still open for writing."""
         if self.closed:
             raise ValueError("ZipBuilder is already closed. Cannot add more content.")
+        if self.zipf is None or self.zipf.fp is None:
+            raise ValueError("ZipBuilder's internal zipfile is not available.")
     
     def _normalize_path(self, location, filename):
         """Create a normalized path within the zip file."""
@@ -117,7 +122,7 @@ class ZipBuilder:
         Returns:
             self: For method chaining
         """
-        self._ensure_open()
+        self.verify_zip()
         
         # Determine image format
         if image_format is None:
@@ -155,7 +160,7 @@ class ZipBuilder:
         Returns:
             self: For method chaining
         """
-        self._ensure_open()
+        self.verify_zip()
         
         zip_path = self._normalize_path(location, filename)
         self.zipf.writestr(zip_path, content.encode(encoding))
@@ -175,7 +180,7 @@ class ZipBuilder:
         Returns:
             self: For method chaining
         """
-        self._ensure_open()
+        self.verify_zip()
         
         # Create CSV content
         csv_buffer = io.StringIO()
@@ -200,7 +205,7 @@ class ZipBuilder:
         Returns:
             self: For method chaining
         """
-        self._ensure_open()
+        self.verify_zip()
         
         zip_path = self._normalize_path(location, filename)
         self.zipf.writestr(zip_path, data)
@@ -219,7 +224,7 @@ class ZipBuilder:
         Returns:
             self: For method chaining
         """
-        self._ensure_open()
+        self.verify_zip()
         
         file_path = Path(file_path)
         if not file_path.exists():

@@ -14,9 +14,10 @@ import zipfile
 import csv
 from pathlib import Path
 
-DEFAULT_IMG_SAVE_LOC = "Images/"
+DEFAULT_IMG_SAVE_LOC = "images/"
 DEFAULT_CSV_SAVE_LOC = "CSV_FILES/"
-DEFAULT_IMG_SAVE_ZIP = "Images/"
+### Adobe docs specify that DataMerge should work with paths relative to the CSV, but it does not, so leave this field empty.
+DEFAULT_IMG_SAVE_ZIP = "" 
 DEFAULT_CSV_SAVE_ZIP = "CSV_FILES/"
 
 
@@ -36,10 +37,6 @@ class Post:
         
         # Clean up the title, should not be any HTML but just to be sure:
         self.title =Methods.clean_text(self.title)
-         
-
-        #remove wordpress "smart" apostrophes, replace them with dumb ones.
-        self.title = self.title.replace('\u2019', "'").replace('\u2018', "'")
 
         featured_media = Methods.get_featured_media(post)
         if featured_media:
@@ -132,9 +129,6 @@ class Post:
         """Add all post images into a Zip file, generate/downloads images where necessary"""
         if not hasattr(self, "downloaded_images"):
             self.download_images()
-        
-        if not hasattr(self, "downloaded_images") and self.downloaded_images:
-            self.download_images()
 
         zip_paths = { }
 
@@ -153,40 +147,12 @@ class Post:
             for index, image in enumerate(article_images):
                 zip_buffer.add_image(self.downloaded_images[self.img_key(index)], DEFAULT_IMG_SAVE_ZIP, self.get_img_filename(index))
                 zip_paths[self.img_key(index)] = DEFAULT_IMG_SAVE_ZIP + self.get_img_filename(index)
-
+        
+        self.image_paths = zip_paths
         return zip_buffer
 
-
-    def save_images(self, location, allimages = False):
-        """Saves QR codes & featured image + all article images if allimages = True"""
-        filepaths = { }
-
-        if not hasattr(self, "downloaded_images"):
-            self.download_images()
-
-        #Saving featured image
-        if hasattr(self, "featured_image"):
-            filepaths[self.featured_key()] = Methods.save_image(self.downloaded_images[self.featured_key()], Path(location) / self.get_featured_filename())
-
-        #Save QR code
-        if (not hasattr(self,"qr_code")):
-            self.generate_qr_code()
-        filepaths[self.qr_key()] = Methods.save_image(self.qr_code, Path(location) / (self.get_qr_filename()))
-        
-        if (allimages):
-            # we already saved the featured image, so filter it out.
-            article_images = {k: v for k, v in self.downloaded_images.items() if k != self.featured_key()}
-            print("Saving all images!")
-            for index, image in enumerate(article_images):
-                print("Saving image.")
-                saveloc = Path(location) / (self.get_img_filename(index))
-                filepaths[self.img_key(index)] = Methods.save_image(self.downloaded_images[self.img_key(index)], saveloc)
-
-        self.image_paths = filepaths
-        return self.image_paths
-
     def get_CSV_helper(self, image_paths, index = 0):
-        """The shared functionality between the two CSV functions is here"""
+        """Returns one CSV entry containing headline, article body, and absolute filepaths to the QR code & featured image. Will save images/QR code"""
         CSV = {
                 "Title_" + chr(index + 65) : self.title,
                 "Body_" + chr(index + 65) : self.body,
@@ -202,19 +168,8 @@ class Post:
         return CSV
 
     def get_CSV_entry_zip(self, index = 0):
-        """Returns one CSV entry containing headline, article body, and local filepaths to the QR code & featured image. Gets images/QR codes into buffers"""
+        """Returns one CSV entry containing post info."""
         
-        
-        return self.get_CSV_helper(image_paths, index)
-
-    def get_CSV_entry(self, index = 0):
-        """Returns one CSV entry containing headline, article body, and absolute filepaths to the QR code & featured image. Will save images/QR code"""
-        if not hasattr(self, "image_paths"):
-            if hasattr(self, "custom_feature"):
-                self.save_images(DEFAULT_IMG_SAVE_LOC, True)
-            else:
-                self.save_images(DEFAULT_IMG_SAVE_LOC)
-
         return self.get_CSV_helper(self.image_paths, index)
             
             
@@ -225,7 +180,7 @@ class WordPressExtractor:
         """Initialize with WordPress site URL (e.g., 'https://example.com')"""
         self.base_url = base_url.rstrip('/')
         self.api_url = urljoin(self.base_url, '/wp-json/wp/v2/')
-    
+
     def get_posts(self, per_page=10, page=1):
         """Fetch posts from WordPress REST API"""
         url = urljoin(self.api_url, 'posts?_embed=1')
@@ -243,15 +198,20 @@ class WordPressExtractor:
             return response.json()
         except requests.exceptions.RequestException as e:
             print(f"Error fetching posts: {e}")
-            return []
-    
+            return []   
+
+        for i, post in enumerate(posts):
+            
+            pass
+
     def extract_posts(self, posts):
         """Extract title, content, and images from posts"""
         extracted_posts = []
         
         for post in posts:
             extracted_posts.append(Post(post))
-        
+
+        self.posts = extracted_posts
         return extracted_posts
     
     def get_all_posts(self, max_posts=None):
