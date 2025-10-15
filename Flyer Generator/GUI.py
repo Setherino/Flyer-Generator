@@ -52,7 +52,7 @@ def display_image_selector(post, post_index):
      #Update the post with the new image
     img_index = re.search(r'\d+$', selected_image_key)
     if img_index:
-        post.custom_feature = (int(img_index).group()) - 1
+        post.custom_feature = int((int(img_index).group()) - 1)
         print("Set custom image: " + str(post.custom_feature))
     
     
