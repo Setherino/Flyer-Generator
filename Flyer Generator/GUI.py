@@ -145,7 +145,7 @@ def display_post_card(post, index, total_posts, is_expanded=False):
                 st.write(f"**Link:** [View Article]({post.link})")
             
             # Action buttons
-            if st.button(f"Download Images", key=f"download_{int(index)}"):
+            if st.button(f"Fetch Article Images", key=f"download_{int(index)}"):
                 with st.spinner("Downloading images..."):
                     post.download_images(True)
                     st.success("Images downloaded!")
