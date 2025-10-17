@@ -279,22 +279,14 @@ def generate_all_csv():
 
         progress_bar.progress((i + 1) / len(st.session_state.posts))
     
-        # Add extra dat
-
-    # Create DataFrame and display
-    #df = pd.DataFrame([row],columns=header)
+    st.success("ZIP file generated!")
     
-    status_text.text("All CSV entries generated!")
-    st.success("All CSV entries have been generated!")
+    st.subheader("Download here:")
     
-    # Display the data
-    st.subheader("Generated CSV Data")
-    #st.dataframe(df, width="stretch")
-    
-    # Download button for CSV
+    # Download button for ZIP
     zip_buffer.add_csv([header,row],"flyer_autofill.csv")
     st.download_button(
-        label="Download images & CSV",
+        label="Download images & CSV as ZIP",
         data=zip_buffer.getvalue(),
         file_name="flyer_info.zip",
         mime="application/zip"
