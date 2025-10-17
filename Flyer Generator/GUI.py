@@ -209,8 +209,6 @@ def main():
     
     st.markdown("---")
     
-    st.markdown("---")
-    
     # Display each post
     for i, post in enumerate(st.session_state.posts):
         display_post_card(post, i, len(st.session_state.posts), is_expanded=(i == 0))  # First post expanded by default
