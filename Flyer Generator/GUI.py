@@ -205,7 +205,7 @@ def main():
     
     with col3:
         if st.button("Generate Zip File"):
-            generate_all_csv()
+            generate_all_zip()
     
     st.markdown("---")
     
@@ -250,7 +250,7 @@ def download_all_images():
     status_text.text("All images downloaded!")
     st.success("All images have been downloaded!")
 
-def generate_all_csv():
+def generate_all_zip():
     """Generate CSV entries for all posts, put everything into zip file."""
     if 'posts' not in st.session_state:
         return
@@ -267,8 +267,8 @@ def generate_all_csv():
         status_text.text(f"Generating CSV entry for post {i+1}/{len(st.session_state.posts)}: {post.title[:30]}...")
         zip_buffer = post.zip_images(zip_buffer)
         csv_entry = post.get_CSV_entry_zip(i)
-        # Would make more sense for each post to be its own row with the same header, but inDesign Data Merge is kind of annoying.
-        # It basically only ever wants to merge one row of a CSV, there are ways around this in ID but it's inflexible, so we just put everything in one row
+        # Would make more sense for each post to be its own row, with every post sharing the same headers, but ID Data Merge
+        # Only ever wants to merge one row of a CSV. There are ways around this but it's inflexible, so instead we put everything in one row
         if csv_entry:
             for k,j in csv_entry.items():
                 header.append(k)
